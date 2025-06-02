@@ -20,3 +20,6 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 # Import routes after app creation
 from routes import *
+
+if __name__ == "__main__":
+    app.run(debug=True, host='0.0.0.0', port=5000)

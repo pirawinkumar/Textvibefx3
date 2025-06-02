@@ -621,6 +621,15 @@ class TextBehindImageGenerator {
             case 'radial':
                 this.drawRadialBars(textX, textY, fontSize, text1, text2);
                 break;
+            case 'dense-crowd':
+                this.drawDenseCrowdBars(textX, textY, fontSize, text1, text2);
+                break;
+            case 'text-shape':
+                this.drawTextShapeBars(textX, textY, fontSize, text1, text2);
+                break;
+            case 'layered-movement':
+                this.drawLayeredMovementBars(textX, textY, fontSize, text1, text2);
+                break;
         }
     }
     
@@ -787,6 +796,229 @@ class TextBehindImageGenerator {
             this.ctx.lineTo(endX, endY);
             this.ctx.stroke();
         }
+    }
+
+    drawDenseCrowdBars(textX, textY, fontSize, text1, text2) {
+        const intensity = parseFloat(this.visualizerIntensity.value) * 0.6;
+        const barCount = 400; // Dense crowd of bars
+        const time = Date.now() * 0.001; // For animation
+        
+        // Calculate text bounds
+        const text1Width = text1 ? this.ctx.measureText(text1).width : 0;
+        const text2Width = text2 ? this.ctx.measureText(text2).width : 0;
+        const maxWidth = Math.max(text1Width, text2Width);
+        const textHeight = fontSize * (text2 ? 2.5 : 1.5);
+        
+        // Create a dense field of bars around the text
+        const fieldWidth = maxWidth * 2.5;
+        const fieldHeight = textHeight * 2;
+        const startX = textX - fieldWidth / 2;
+        const startY = textY - fieldHeight / 2;
+        
+        for (let i = 0; i < barCount; i++) {
+            // Create grid-like distribution with some randomness
+            const gridX = (i % Math.sqrt(barCount)) / Math.sqrt(barCount);
+            const gridY = Math.floor(i / Math.sqrt(barCount)) / Math.sqrt(barCount);
+            
+            // Add jitter for organic look
+            const jitterX = (Math.sin(time * 2 + i * 0.1) * 0.05);
+            const jitterY = (Math.cos(time * 1.5 + i * 0.15) * 0.05);
+            
+            const barX = startX + (gridX + jitterX) * fieldWidth;
+            const barY = startY + (gridY + jitterY) * fieldHeight;
+            
+            // Distance from text center for intensity falloff
+            const distanceFromCenter = Math.sqrt(
+                Math.pow(barX - textX, 2) + Math.pow(barY - textY, 2)
+            );
+            const maxDistance = Math.max(fieldWidth, fieldHeight) * 0.5;
+            const distanceFactor = Math.max(0, 1 - (distanceFromCenter / maxDistance));
+            
+            // Map to frequency spectrum
+            const spectrumIndex = Math.floor((i / barCount) * this.dataArray.length);
+            const frequencyValue = this.dataArray[spectrumIndex];
+            const normalizedFreq = frequencyValue / 255;
+            
+            // Layered movement effects
+            const bounce = Math.sin(time * 3 + i * 0.2) * 0.3;
+            const pulse = Math.cos(time * 4 + i * 0.1) * 0.2;
+            const jitter = Math.sin(time * 8 + i * 0.05) * 0.1;
+            
+            // Bar height with multiple layers of movement
+            const baseHeight = normalizedFreq * fontSize * intensity * distanceFactor;
+            const animatedHeight = baseHeight * (1 + bounce + pulse + jitter);
+            
+            // Skip very small bars to maintain performance
+            if (animatedHeight < 2) continue;
+            
+            // Color gradient based on frequency and position
+            const hue = 240 + (normalizedFreq * 120) + (distanceFactor * 60);
+            const saturation = 60 + (normalizedFreq * 30);
+            const lightness = 30 + (normalizedFreq * 40) + (distanceFactor * 20);
+            const alpha = (normalizedFreq * 0.7 + 0.1) * distanceFactor;
+            
+            // Glow effect for intensity
+            if (normalizedFreq > 0.6) {
+                this.ctx.shadowColor = `hsla(${hue}, ${saturation}%, ${lightness + 30}%, ${alpha * 0.8})`;
+                this.ctx.shadowBlur = 8 + (normalizedFreq * 12);
+            }
+            
+            this.ctx.strokeStyle = `hsla(${hue}, ${saturation}%, ${lightness}%, ${alpha})`;
+            this.ctx.lineWidth = 1 + (normalizedFreq * 2);
+            this.ctx.lineCap = 'round';
+            
+            this.ctx.beginPath();
+            this.ctx.moveTo(barX, barY);
+            this.ctx.lineTo(barX, barY - animatedHeight);
+            this.ctx.stroke();
+            
+            // Reset shadow
+            this.ctx.shadowColor = 'transparent';
+            this.ctx.shadowBlur = 0;
+        }
+    }
+
+    drawTextShapeBars(textX, textY, fontSize, text1, text2) {
+        const intensity = parseFloat(this.visualizerIntensity.value) * 0.8;
+        const time = Date.now() * 0.001;
+        
+        // Create bars that follow the shape of the text
+        const texts = [
+            { text: text1, x: textX, y: textY },
+            { text: text2, x: textX, y: textY + fontSize + 20 }
+        ].filter(item => item.text);
+        
+        texts.forEach((textItem, textIndex) => {
+            const textWidth = this.ctx.measureText(textItem.text).width;
+            const barDensity = 150; // Bars per text line
+            
+            for (let i = 0; i < barDensity; i++) {
+                // Position bars along text path
+                const progress = i / barDensity;
+                const baseX = textItem.x - textWidth/2 + progress * textWidth;
+                
+                // Create multiple layers around the text shape
+                for (let layer = 0; layer < 3; layer++) {
+                    const layerOffset = (layer - 1) * fontSize * 0.3;
+                    const barX = baseX + Math.sin(time * 2 + i * 0.1 + layer) * 5;
+                    const barY = textItem.y + layerOffset;
+                    
+                    // Frequency mapping
+                    const spectrumIndex = Math.floor((i / barDensity) * this.dataArray.length);
+                    const frequencyValue = this.dataArray[spectrumIndex];
+                    const normalizedFreq = frequencyValue / 255;
+                    
+                    // Layer-specific movement
+                    const layerBounce = Math.sin(time * (3 + layer) + i * 0.15) * 0.4;
+                    const layerPulse = Math.cos(time * (5 + layer * 2) + i * 0.08) * 0.3;
+                    
+                    const barHeight = normalizedFreq * fontSize * intensity * (0.8 - layer * 0.2) * (1 + layerBounce + layerPulse);
+                    
+                    if (barHeight < 1) continue;
+                    
+                    // Layer-specific colors
+                    const baseHue = 280 + (layer * 40) + (normalizedFreq * 80);
+                    const saturation = 70 + (normalizedFreq * 20);
+                    const lightness = 40 + (normalizedFreq * 30) - (layer * 10);
+                    const alpha = (normalizedFreq * 0.6 + 0.2) * (1 - layer * 0.2);
+                    
+                    this.ctx.strokeStyle = `hsla(${baseHue}, ${saturation}%, ${lightness}%, ${alpha})`;
+                    this.ctx.lineWidth = 1 + (normalizedFreq * 1.5);
+                    this.ctx.lineCap = 'round';
+                    
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(barX, barY);
+                    this.ctx.lineTo(barX, barY - barHeight);
+                    this.ctx.stroke();
+                }
+            }
+        });
+    }
+
+    drawLayeredMovementBars(textX, textY, fontSize, text1, text2) {
+        const intensity = parseFloat(this.visualizerIntensity.value) * 0.7;
+        const time = Date.now() * 0.001;
+        const barCount = 300;
+        
+        // Calculate text bounds
+        const text1Width = text1 ? this.ctx.measureText(text1).width : 0;
+        const text2Width = text2 ? this.ctx.measureText(text2).width : 0;
+        const maxWidth = Math.max(text1Width, text2Width);
+        const textHeight = fontSize * (text2 ? 2.5 : 1.5);
+        
+        // Create multiple movement layers
+        const layers = [
+            { speed: 1, amplitude: 1, count: 100, hueShift: 0 },
+            { speed: 1.5, amplitude: 0.7, count: 100, hueShift: 60 },
+            { speed: 2.2, amplitude: 0.5, count: 100, hueShift: 120 }
+        ];
+        
+        layers.forEach((layer, layerIndex) => {
+            for (let i = 0; i < layer.count; i++) {
+                // Circular distribution around text
+                const angle = (i / layer.count) * Math.PI * 2;
+                const baseRadius = maxWidth * 0.8 + layerIndex * fontSize * 0.2;
+                
+                // Complex layered movement
+                const primaryWave = Math.sin(time * layer.speed + i * 0.2) * layer.amplitude;
+                const secondaryWave = Math.cos(time * layer.speed * 1.3 + i * 0.15) * layer.amplitude * 0.6;
+                const jitterEffect = Math.sin(time * layer.speed * 3 + i * 0.05) * layer.amplitude * 0.3;
+                
+                const dynamicRadius = baseRadius + (primaryWave + secondaryWave + jitterEffect) * fontSize * 0.3;
+                
+                const barX = textX + Math.cos(angle) * dynamicRadius;
+                const barY = textY + Math.sin(angle) * dynamicRadius * 0.7; // Elliptical
+                
+                // Frequency mapping
+                const spectrumIndex = Math.floor((i / layer.count) * this.dataArray.length);
+                const frequencyValue = this.dataArray[spectrumIndex];
+                const normalizedFreq = frequencyValue / 255;
+                
+                // Multi-layered height calculation
+                const bounceHeight = Math.sin(time * 4 + angle * 3) * 0.4;
+                const pulseHeight = Math.cos(time * 6 + i * 0.1) * 0.3;
+                const jitterHeight = Math.sin(time * 10 + angle) * 0.2;
+                
+                const barHeight = normalizedFreq * fontSize * intensity * layer.amplitude * 
+                                (1 + bounceHeight + pulseHeight + jitterHeight);
+                
+                if (barHeight < 2) continue;
+                
+                // Direction for bar growth
+                const barEndX = barX + Math.cos(angle) * barHeight;
+                const barEndY = barY + Math.sin(angle) * barHeight;
+                
+                // Layer-specific color scheme with gradients
+                const baseHue = 200 + layer.hueShift + (normalizedFreq * 60) + (angle * 30);
+                const saturation = 60 + (normalizedFreq * 25) + (layerIndex * 10);
+                const lightness = 35 + (normalizedFreq * 35) + (Math.sin(time + angle) * 15);
+                const alpha = (normalizedFreq * 0.7 + 0.1) * (1 - layerIndex * 0.15);
+                
+                // Glow effect for high frequencies
+                if (normalizedFreq > 0.7) {
+                    this.ctx.shadowColor = `hsla(${baseHue}, ${saturation}%, ${lightness + 40}%, ${alpha * 0.6})`;
+                    this.ctx.shadowBlur = 6 + (normalizedFreq * 8);
+                }
+                
+                // Gradient stroke
+                const gradient = this.ctx.createLinearGradient(barX, barY, barEndX, barEndY);
+                gradient.addColorStop(0, `hsla(${baseHue}, ${saturation}%, ${lightness}%, ${alpha})`);
+                gradient.addColorStop(1, `hsla(${baseHue + 30}, ${saturation}%, ${lightness + 20}%, ${alpha * 0.3})`);
+                
+                this.ctx.strokeStyle = gradient;
+                this.ctx.lineWidth = 1 + (normalizedFreq * 2) + (layerIndex * 0.5);
+                this.ctx.lineCap = 'round';
+                
+                this.ctx.beginPath();
+                this.ctx.moveTo(barX, barY);
+                this.ctx.lineTo(barEndX, barEndY);
+                this.ctx.stroke();
+                
+                // Reset shadow
+                this.ctx.shadowColor = 'transparent';
+                this.ctx.shadowBlur = 0;
+            }
+        });
     }
     
     async loadProcessedImage(imageSrc) {
