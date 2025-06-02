@@ -1,0 +1,31 @@
+# Virtual Environment
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Large files and dependencies
+*.pyd
+*.dll
+*.so
+*.dylib
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Local development
+.env
+.env.local
+
+# Distribution
+dist/
+build/
+*.egg-info/ 
