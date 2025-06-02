@@ -246,12 +246,25 @@ class TextBehindImageGenerator {
             // Get frequency data
             this.analyser.getByteFrequencyData(this.dataArray);
             
-            // Update preview if we have images
-            this.updatePreview();
+            // Force canvas redraw for recording
+            if (this.isRecording) {
+                this.forceCanvasUpdate();
+            } else {
+                this.updatePreview();
+            }
             
             this.animationFrame = requestAnimationFrame(animate);
         };
         animate();
+    }
+    
+    forceCanvasUpdate() {
+        // Force a complete redraw for recording
+        if (this.foregroundImage) {
+            this.composeImage();
+        } else {
+            this.drawCanvas();
+        }
     }
     
     async handleFileSelect(files) {
@@ -848,14 +861,26 @@ class TextBehindImageGenerator {
         if (!this.foregroundImage || !this.audioBuffer || this.isRecording) return;
         
         try {
-            // Get canvas stream
-            const canvasStream = this.canvas.captureStream(30); // 30 FPS
+            this.isRecording = true;
             
-            // Create audio stream from audio context
+            // Ensure canvas is properly sized for recording
+            this.setupCanvas();
+            
+            // Start high-frequency canvas updates for smooth recording
+            const recordingFPS = 60;
+            const canvasStream = this.canvas.captureStream(recordingFPS);
+            
+            // Create a dedicated audio source for recording with proper routing
+            const recordingAudioSource = this.audioContext.createBufferSource();
+            recordingAudioSource.buffer = this.audioBuffer;
+            
+            // Create media stream destination for audio recording
             const audioDestination = this.audioContext.createMediaStreamDestination();
+            recordingAudioSource.connect(this.analyser);
             this.analyser.connect(audioDestination);
+            this.analyser.connect(this.audioContext.destination); // For monitoring
             
-            // Combine canvas and audio streams
+            // Combine video and audio streams
             const combinedStream = new MediaStream([
                 ...canvasStream.getVideoTracks(),
                 ...audioDestination.stream.getAudioTracks()
@@ -863,13 +888,17 @@ class TextBehindImageGenerator {
             
             this.recordingStream = combinedStream;
             
-            // Set up MediaRecorder
-            const options = {
+            // MediaRecorder setup with better options
+            let options = {
                 mimeType: 'video/webm;codecs=vp9,opus',
-                videoBitsPerSecond: 2500000 // 2.5 Mbps
+                videoBitsPerSecond: 5000000, // Higher bitrate for better quality
+                audioBitsPerSecond: 128000
             };
             
-            // Fallback if webm not supported
+            // Try different codecs if not supported
+            if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+                options.mimeType = 'video/webm;codecs=vp8,opus';
+            }
             if (!MediaRecorder.isTypeSupported(options.mimeType)) {
                 options.mimeType = 'video/webm';
             }
@@ -887,32 +916,49 @@ class TextBehindImageGenerator {
                 this.saveRecording();
             };
             
-            // Start recording
-            this.mediaRecorder.start();
-            this.isRecording = true;
-            
-            // Update UI
+            // Update UI first
             this.recordBtn.style.display = 'none';
             this.stopRecordBtn.style.display = 'inline-block';
             this.stopRecordBtn.disabled = false;
+            this.showPreviewInfo('Starting recording...', 'warning');
             
-            // Start audio playback for recording
-            await this.playAudio();
+            // Start MediaRecorder
+            this.mediaRecorder.start(100); // Record in 100ms chunks for smoother capture
             
-            this.showPreviewInfo('Recording video... Audio will play automatically.', 'warning');
+            // Small delay to ensure recorder is ready
+            await new Promise(resolve => setTimeout(resolve, 100));
+            
+            // Start audio playback
+            recordingAudioSource.start();
+            this.audioSource = recordingAudioSource; // Keep reference for stopping
+            this.isPlaying = true;
+            
+            // Update play/pause buttons
+            this.playBtn.style.display = 'none';
+            this.pauseBtn.style.display = 'inline-block';
+            
+            // Start visualization loop
+            this.startVisualization();
+            
+            this.showPreviewInfo('Recording video with visualizer...', 'warning');
             
             // Auto-stop when audio ends
-            this.audioSource.onended = () => {
+            recordingAudioSource.onended = () => {
+                this.isPlaying = false;
+                this.playBtn.style.display = 'inline-block';
+                this.pauseBtn.style.display = 'none';
+                
                 if (this.isRecording) {
                     setTimeout(() => {
                         this.stopRecording();
-                    }, 500); // Small delay to ensure everything is captured
+                    }, 500);
                 }
             };
             
         } catch (error) {
             console.error('Recording start error:', error);
             this.showPreviewInfo('Failed to start recording. Please try again.', 'danger');
+            this.isRecording = false;
             this.resetRecordingUI();
         }
     }
@@ -924,8 +970,11 @@ class TextBehindImageGenerator {
         this.mediaRecorder.stop();
         this.isRecording = false;
         
-        // Stop audio
+        // Stop audio and animation
         this.pauseAudio();
+        if (this.animationFrame) {
+            cancelAnimationFrame(this.animationFrame);
+        }
         
         // Reset UI
         this.resetRecordingUI();
