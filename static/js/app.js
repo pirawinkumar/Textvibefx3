@@ -20,6 +20,12 @@ class TextBehindImageGenerator {
         this.isPlaying = false;
         this.animationFrame = null;
         
+        // Video recording variables
+        this.mediaRecorder = null;
+        this.recordedChunks = [];
+        this.isRecording = false;
+        this.recordingStream = null;
+        
         this.initializeElements();
         this.bindEvents();
         this.updateRangeValues();
@@ -58,6 +64,8 @@ class TextBehindImageGenerator {
         // Buttons
         this.processBtn = document.getElementById('process-btn');
         this.downloadBtn = document.getElementById('download-btn');
+        this.recordBtn = document.getElementById('record-btn');
+        this.stopRecordBtn = document.getElementById('stop-record-btn');
     }
     
     bindEvents() {
@@ -97,6 +105,8 @@ class TextBehindImageGenerator {
         // Button events
         this.processBtn.addEventListener('click', () => this.processImage());
         this.downloadBtn.addEventListener('click', () => this.downloadImage());
+        this.recordBtn.addEventListener('click', () => this.startRecording());
+        this.stopRecordBtn.addEventListener('click', () => this.stopRecording());
     }
     
     updateRangeValues() {
@@ -163,6 +173,9 @@ class TextBehindImageGenerator {
             
             this.showAudioStatus(`Audio loaded successfully! Duration: ${Math.round(this.audioBuffer.duration)}s`, 'success');
             this.audioControls.style.display = 'block';
+            
+            // Enable recording button if we have both image and audio
+            this.updateRecordingButtons();
             
         } catch (error) {
             console.error('Audio loading error:', error);
@@ -270,6 +283,9 @@ class TextBehindImageGenerator {
             this.showUploadStatus(`Image loaded successfully! (${this.originalImage.width}x${this.originalImage.height})`, 'success');
             this.processBtn.disabled = false;
             this.updatePreview();
+            
+            // Enable recording button if we have both image and audio
+            this.updateRecordingButtons();
             
             // Clean up the object URL
             URL.revokeObjectURL(imageUrl);
@@ -419,6 +435,9 @@ class TextBehindImageGenerator {
             
             this.downloadBtn.disabled = false;
             this.showPreviewInfo('Background removal complete! Text placed behind person.');
+            
+            // Enable recording button if we have both image and audio
+            this.updateRecordingButtons();
             
             // Clean up
             URL.revokeObjectURL(foregroundUrl);
@@ -813,6 +832,140 @@ class TextBehindImageGenerator {
                 this.audioStatus.innerHTML = '';
             }, 5000);
         }
+    }
+    
+    updateRecordingButtons() {
+        // Enable recording if we have both processed image and audio
+        const canRecord = this.foregroundImage && this.audioBuffer;
+        this.recordBtn.disabled = !canRecord;
+        
+        if (canRecord) {
+            this.showPreviewInfo('Ready to record video with audio!', 'success');
+        }
+    }
+    
+    async startRecording() {
+        if (!this.foregroundImage || !this.audioBuffer || this.isRecording) return;
+        
+        try {
+            // Get canvas stream
+            const canvasStream = this.canvas.captureStream(30); // 30 FPS
+            
+            // Create audio stream from audio context
+            const audioDestination = this.audioContext.createMediaStreamDestination();
+            this.analyser.connect(audioDestination);
+            
+            // Combine canvas and audio streams
+            const combinedStream = new MediaStream([
+                ...canvasStream.getVideoTracks(),
+                ...audioDestination.stream.getAudioTracks()
+            ]);
+            
+            this.recordingStream = combinedStream;
+            
+            // Set up MediaRecorder
+            const options = {
+                mimeType: 'video/webm;codecs=vp9,opus',
+                videoBitsPerSecond: 2500000 // 2.5 Mbps
+            };
+            
+            // Fallback if webm not supported
+            if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+                options.mimeType = 'video/webm';
+            }
+            
+            this.mediaRecorder = new MediaRecorder(combinedStream, options);
+            this.recordedChunks = [];
+            
+            this.mediaRecorder.ondataavailable = (event) => {
+                if (event.data.size > 0) {
+                    this.recordedChunks.push(event.data);
+                }
+            };
+            
+            this.mediaRecorder.onstop = () => {
+                this.saveRecording();
+            };
+            
+            // Start recording
+            this.mediaRecorder.start();
+            this.isRecording = true;
+            
+            // Update UI
+            this.recordBtn.style.display = 'none';
+            this.stopRecordBtn.style.display = 'inline-block';
+            this.stopRecordBtn.disabled = false;
+            
+            // Start audio playback for recording
+            await this.playAudio();
+            
+            this.showPreviewInfo('Recording video... Audio will play automatically.', 'warning');
+            
+            // Auto-stop when audio ends
+            this.audioSource.onended = () => {
+                if (this.isRecording) {
+                    setTimeout(() => {
+                        this.stopRecording();
+                    }, 500); // Small delay to ensure everything is captured
+                }
+            };
+            
+        } catch (error) {
+            console.error('Recording start error:', error);
+            this.showPreviewInfo('Failed to start recording. Please try again.', 'danger');
+            this.resetRecordingUI();
+        }
+    }
+    
+    stopRecording() {
+        if (!this.isRecording || !this.mediaRecorder) return;
+        
+        // Stop recording
+        this.mediaRecorder.stop();
+        this.isRecording = false;
+        
+        // Stop audio
+        this.pauseAudio();
+        
+        // Reset UI
+        this.resetRecordingUI();
+        
+        this.showPreviewInfo('Processing video...', 'warning');
+    }
+    
+    resetRecordingUI() {
+        this.recordBtn.style.display = 'inline-block';
+        this.stopRecordBtn.style.display = 'none';
+        this.stopRecordBtn.disabled = true;
+    }
+    
+    saveRecording() {
+        if (this.recordedChunks.length === 0) {
+            this.showPreviewInfo('No video data recorded.', 'danger');
+            return;
+        }
+        
+        // Create blob from recorded chunks
+        const blob = new Blob(this.recordedChunks, { type: 'video/webm' });
+        
+        // Create download link
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `text_behind_image_video_${Date.now()}.webm`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        // Clean up
+        this.recordedChunks = [];
+        if (this.recordingStream) {
+            this.recordingStream.getTracks().forEach(track => track.stop());
+            this.recordingStream = null;
+        }
+        
+        this.showPreviewInfo('Video downloaded successfully!', 'success');
     }
 }
 
