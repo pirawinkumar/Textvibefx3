@@ -42,6 +42,7 @@ class TextBehindImageGenerator {
         this.playBtn = document.getElementById('play-btn');
         this.pauseBtn = document.getElementById('pause-btn');
         this.visualizerIntensity = document.getElementById('visualizer-intensity');
+        this.visualizerStyle = document.getElementById('visualizer-style');
         
         // Text controls
         this.textLine1 = document.getElementById('text-line1');
@@ -578,31 +579,151 @@ class TextBehindImageGenerator {
     drawFrequencyBars(textX, textY, fontSize, text1, text2) {
         if (!this.dataArray) return;
         
+        const style = this.visualizerStyle.value;
+        
+        switch (style) {
+            case 'circular':
+                this.drawCircularBars(textX, textY, fontSize, text1, text2);
+                break;
+            case 'outline':
+                this.drawOutlineBars(textX, textY, fontSize, text1, text2);
+                break;
+            case 'radial':
+                this.drawRadialBars(textX, textY, fontSize, text1, text2);
+                break;
+        }
+    }
+    
+    drawCircularBars(textX, textY, fontSize, text1, text2) {
         const intensity = parseFloat(this.visualizerIntensity.value);
-        const barCount = Math.min(32, this.dataArray.length);
-        const radius = fontSize * 1.5;
+        const barCount = 64; // More bars for smoother circle
         
-        // Calculate text bounds for positioning bars around text
-        const textWidth = Math.max(
-            text1 ? this.ctx.measureText(text1).width : 0,
-            text2 ? this.ctx.measureText(text2).width : 0
-        );
+        // Calculate text bounds
+        const text1Width = text1 ? this.ctx.measureText(text1).width : 0;
+        const text2Width = text2 ? this.ctx.measureText(text2).width : 0;
+        const maxWidth = Math.max(text1Width, text2Width);
         
+        // Create multiple concentric circles
+        const circles = [
+            { radius: (maxWidth * 0.6) + fontSize * 0.3, barLength: 0.8 },
+            { radius: (maxWidth * 0.6) + fontSize * 0.6, barLength: 1.0 },
+            { radius: (maxWidth * 0.6) + fontSize * 0.9, barLength: 0.6 }
+        ];
+        
+        circles.forEach((circle, circleIndex) => {
+            for (let i = 0; i < barCount; i++) {
+                const angle = (i / barCount) * Math.PI * 2;
+                const dataIndex = Math.floor((i / barCount) * this.dataArray.length);
+                const barHeight = (this.dataArray[dataIndex] / 255) * fontSize * intensity * circle.barLength;
+                
+                const startX = textX + Math.cos(angle) * circle.radius;
+                const startY = textY + Math.sin(angle) * circle.radius;
+                const endX = startX + Math.cos(angle) * barHeight;
+                const endY = startY + Math.sin(angle) * barHeight;
+                
+                // Color variation across circles and frequency
+                const hue = (i / barCount) * 360 + (circleIndex * 120);
+                const saturation = 70 + (circleIndex * 10);
+                const alpha = (this.dataArray[dataIndex] / 255) * (0.9 - circleIndex * 0.2);
+                
+                this.ctx.strokeStyle = `hsla(${hue % 360}, ${saturation}%, 60%, ${alpha})`;
+                this.ctx.lineWidth = 3 - circleIndex;
+                this.ctx.beginPath();
+                this.ctx.moveTo(startX, startY);
+                this.ctx.lineTo(endX, endY);
+                this.ctx.stroke();
+            }
+        });
+    }
+    
+    drawOutlineBars(textX, textY, fontSize, text1, text2) {
+        const intensity = parseFloat(this.visualizerIntensity.value);
+        
+        // Get text paths for outline following
+        const texts = [
+            { text: text1, x: textX, y: textY },
+            { text: text2, x: textX, y: textY + fontSize + 20 }
+        ].filter(item => item.text);
+        
+        texts.forEach((textItem, textIndex) => {
+            const textWidth = this.ctx.measureText(textItem.text).width;
+            const barCount = Math.min(32, textItem.text.length * 4);
+            
+            // Create bars around text perimeter
+            const perimeter = [
+                // Top edge
+                ...Array.from({length: barCount / 4}, (_, i) => ({
+                    x: textItem.x - textWidth/2 + (i / (barCount/4)) * textWidth,
+                    y: textItem.y - fontSize/2,
+                    angle: -Math.PI/2
+                })),
+                // Right edge
+                ...Array.from({length: barCount / 4}, (_, i) => ({
+                    x: textItem.x + textWidth/2,
+                    y: textItem.y - fontSize/2 + (i / (barCount/4)) * fontSize,
+                    angle: 0
+                })),
+                // Bottom edge
+                ...Array.from({length: barCount / 4}, (_, i) => ({
+                    x: textItem.x + textWidth/2 - (i / (barCount/4)) * textWidth,
+                    y: textItem.y + fontSize/2,
+                    angle: Math.PI/2
+                })),
+                // Left edge
+                ...Array.from({length: barCount / 4}, (_, i) => ({
+                    x: textItem.x - textWidth/2,
+                    y: textItem.y + fontSize/2 - (i / (barCount/4)) * fontSize,
+                    angle: Math.PI
+                }))
+            ];
+            
+            perimeter.forEach((point, i) => {
+                const dataIndex = Math.floor((i / perimeter.length) * this.dataArray.length);
+                const barLength = (this.dataArray[dataIndex] / 255) * fontSize * intensity * 0.5;
+                
+                const endX = point.x + Math.cos(point.angle) * barLength;
+                const endY = point.y + Math.sin(point.angle) * barLength;
+                
+                const hue = (i / perimeter.length) * 360 + (textIndex * 180);
+                const alpha = (this.dataArray[dataIndex] / 255) * 0.8;
+                
+                this.ctx.strokeStyle = `hsla(${hue % 360}, 70%, 60%, ${alpha})`;
+                this.ctx.lineWidth = 2;
+                this.ctx.beginPath();
+                this.ctx.moveTo(point.x, point.y);
+                this.ctx.lineTo(endX, endY);
+                this.ctx.stroke();
+            });
+        });
+    }
+    
+    drawRadialBars(textX, textY, fontSize, text1, text2) {
+        const intensity = parseFloat(this.visualizerIntensity.value);
+        const barCount = 48;
+        
+        // Create radial burst effect
         for (let i = 0; i < barCount; i++) {
             const angle = (i / barCount) * Math.PI * 2;
-            const barHeight = (this.dataArray[i] / 255) * radius * intensity * 0.5;
+            const dataIndex = Math.floor((i / barCount) * this.dataArray.length);
+            const barLength = (this.dataArray[dataIndex] / 255) * fontSize * intensity * 2;
             
-            const startX = textX + Math.cos(angle) * (textWidth * 0.6);
-            const startY = textY + Math.sin(angle) * (fontSize * 0.8);
-            const endX = startX + Math.cos(angle) * barHeight;
-            const endY = startY + Math.sin(angle) * barHeight;
+            // Start from text center, burst outward
+            const startRadius = fontSize * 0.5;
+            const startX = textX + Math.cos(angle) * startRadius;
+            const startY = textY + Math.sin(angle) * startRadius;
+            const endX = startX + Math.cos(angle) * barLength;
+            const endY = startY + Math.sin(angle) * barLength;
             
-            // Color based on frequency
+            // Create gradient effect
+            const gradient = this.ctx.createLinearGradient(startX, startY, endX, endY);
             const hue = (i / barCount) * 360;
-            const alpha = (this.dataArray[i] / 255) * 0.8;
+            const alpha = (this.dataArray[dataIndex] / 255);
             
-            this.ctx.strokeStyle = `hsla(${hue}, 70%, 60%, ${alpha})`;
-            this.ctx.lineWidth = 2;
+            gradient.addColorStop(0, `hsla(${hue}, 70%, 70%, ${alpha})`);
+            gradient.addColorStop(1, `hsla(${(hue + 60) % 360}, 80%, 50%, 0)`);
+            
+            this.ctx.strokeStyle = gradient;
+            this.ctx.lineWidth = 3;
             this.ctx.beginPath();
             this.ctx.moveTo(startX, startY);
             this.ctx.lineTo(endX, endY);
