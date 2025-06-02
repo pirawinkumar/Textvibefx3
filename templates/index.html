@@ -45,6 +45,40 @@
                         <div id="upload-status" class="upload-status"></div>
                     </div>
 
+                    <!-- Audio Upload Area -->
+                    <div class="control-section">
+                        <h5 class="section-title">
+                            <i class="fas fa-music me-2"></i>
+                            AUDIO UPLOAD
+                        </h5>
+                        <div id="audio-upload-area" class="upload-zone">
+                            <div class="upload-content">
+                                <i class="fas fa-file-audio upload-icon"></i>
+                                <p class="upload-text">Drag & drop an audio file here or click to browse</p>
+                                <p class="upload-subtext">Supports MP3, WAV, OGG (max 10MB)</p>
+                            </div>
+                            <input type="file" id="audio-input" accept="audio/*" hidden>
+                        </div>
+                        <div id="audio-status" class="upload-status"></div>
+                        
+                        <div class="audio-controls mt-3" style="display: none;">
+                            <div class="row">
+                                <div class="col-6">
+                                    <button id="play-btn" class="btn btn-success btn-sm">
+                                        <i class="fas fa-play"></i> Play
+                                    </button>
+                                    <button id="pause-btn" class="btn btn-warning btn-sm" style="display: none;">
+                                        <i class="fas fa-pause"></i> Pause
+                                    </button>
+                                </div>
+                                <div class="col-6">
+                                    <label for="visualizer-intensity" class="form-label">Intensity</label>
+                                    <input type="range" class="form-range" id="visualizer-intensity" min="1" max="10" value="5">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Text Controls -->
                     <div class="control-section">
                         <h5 class="section-title">
@@ -129,7 +163,7 @@
                         <div class="preview-controls mt-3">
                             <button id="download-btn" class="btn btn-success" disabled>
                                 <i class="fas fa-download me-2"></i>
-                                Download PNG
+                                Download Frame
                             </button>
                             <div class="preview-info" id="preview-info"></div>
                         </div>

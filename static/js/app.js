@@ -11,6 +11,15 @@ class TextBehindImageGenerator {
         this.ctx = this.canvas.getContext('2d');
         this.isProcessing = false;
         
+        // Audio variables
+        this.audioContext = null;
+        this.audioBuffer = null;
+        this.audioSource = null;
+        this.analyser = null;
+        this.dataArray = null;
+        this.isPlaying = false;
+        this.animationFrame = null;
+        
         this.initializeElements();
         this.bindEvents();
         this.updateRangeValues();
@@ -24,6 +33,15 @@ class TextBehindImageGenerator {
         this.previewContainer = document.getElementById('preview-container');
         this.processingOverlay = document.getElementById('processing-overlay');
         this.previewInfo = document.getElementById('preview-info');
+        
+        // Audio elements
+        this.audioUploadArea = document.getElementById('audio-upload-area');
+        this.audioInput = document.getElementById('audio-input');
+        this.audioStatus = document.getElementById('audio-status');
+        this.audioControls = document.querySelector('.audio-controls');
+        this.playBtn = document.getElementById('play-btn');
+        this.pauseBtn = document.getElementById('pause-btn');
+        this.visualizerIntensity = document.getElementById('visualizer-intensity');
         
         // Text controls
         this.textLine1 = document.getElementById('text-line1');
@@ -50,6 +68,17 @@ class TextBehindImageGenerator {
         this.uploadArea.addEventListener('dragover', (e) => this.handleDragOver(e));
         this.uploadArea.addEventListener('dragleave', (e) => this.handleDragLeave(e));
         this.uploadArea.addEventListener('drop', (e) => this.handleDrop(e));
+        
+        // Audio upload events
+        this.audioUploadArea.addEventListener('click', () => this.audioInput.click());
+        this.audioInput.addEventListener('change', (e) => this.handleAudioSelect(e.target.files));
+        this.audioUploadArea.addEventListener('dragover', (e) => this.handleDragOver(e));
+        this.audioUploadArea.addEventListener('dragleave', (e) => this.handleDragLeave(e));
+        this.audioUploadArea.addEventListener('drop', (e) => this.handleAudioDrop(e));
+        
+        // Audio control events
+        this.playBtn.addEventListener('click', () => this.playAudio());
+        this.pauseBtn.addEventListener('click', () => this.pauseAudio());
         
         // Range input events
         this.fontSize.addEventListener('input', () => this.updateRangeValues());
@@ -89,6 +118,126 @@ class TextBehindImageGenerator {
         e.preventDefault();
         this.uploadArea.classList.remove('dragover');
         this.handleFileSelect(e.dataTransfer.files);
+    }
+    
+    handleAudioDrop(e) {
+        e.preventDefault();
+        this.audioUploadArea.classList.remove('dragover');
+        this.handleAudioSelect(e.dataTransfer.files);
+    }
+    
+    async handleAudioSelect(files) {
+        if (files.length === 0) return;
+        
+        const file = files[0];
+        
+        // Validate file type
+        if (!file.type.startsWith('audio/')) {
+            this.showAudioStatus('Please select a valid audio file.', 'danger');
+            return;
+        }
+        
+        // Validate file size (10MB)
+        if (file.size > 10 * 1024 * 1024) {
+            this.showAudioStatus('File size must be less than 10MB.', 'danger');
+            return;
+        }
+        
+        this.showAudioStatus('Loading audio...', 'warning');
+        
+        try {
+            // Initialize audio context if needed
+            if (!this.audioContext) {
+                this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            
+            // Read the audio file
+            const arrayBuffer = await file.arrayBuffer();
+            this.audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
+            
+            // Set up analyser
+            this.analyser = this.audioContext.createAnalyser();
+            this.analyser.fftSize = 256;
+            this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
+            
+            this.showAudioStatus(`Audio loaded successfully! Duration: ${Math.round(this.audioBuffer.duration)}s`, 'success');
+            this.audioControls.style.display = 'block';
+            
+        } catch (error) {
+            console.error('Audio loading error:', error);
+            this.showAudioStatus('Failed to load audio. Please try again.', 'danger');
+        }
+    }
+    
+    async playAudio() {
+        if (!this.audioBuffer || !this.audioContext) return;
+        
+        try {
+            // Resume audio context if suspended
+            if (this.audioContext.state === 'suspended') {
+                await this.audioContext.resume();
+            }
+            
+            // Stop current source if playing
+            if (this.audioSource) {
+                this.audioSource.stop();
+            }
+            
+            // Create new source
+            this.audioSource = this.audioContext.createBufferSource();
+            this.audioSource.buffer = this.audioBuffer;
+            this.audioSource.connect(this.analyser);
+            this.analyser.connect(this.audioContext.destination);
+            
+            // Set up ended event
+            this.audioSource.onended = () => {
+                this.isPlaying = false;
+                this.playBtn.style.display = 'inline-block';
+                this.pauseBtn.style.display = 'none';
+                if (this.animationFrame) {
+                    cancelAnimationFrame(this.animationFrame);
+                }
+            };
+            
+            this.audioSource.start();
+            this.isPlaying = true;
+            this.playBtn.style.display = 'none';
+            this.pauseBtn.style.display = 'inline-block';
+            
+            // Start animation loop
+            this.startVisualization();
+            
+        } catch (error) {
+            console.error('Audio play error:', error);
+            this.showAudioStatus('Failed to play audio.', 'danger');
+        }
+    }
+    
+    pauseAudio() {
+        if (this.audioSource) {
+            this.audioSource.stop();
+            this.isPlaying = false;
+            this.playBtn.style.display = 'inline-block';
+            this.pauseBtn.style.display = 'none';
+            if (this.animationFrame) {
+                cancelAnimationFrame(this.animationFrame);
+            }
+        }
+    }
+    
+    startVisualization() {
+        const animate = () => {
+            if (!this.isPlaying) return;
+            
+            // Get frequency data
+            this.analyser.getByteFrequencyData(this.dataArray);
+            
+            // Update preview if we have images
+            this.updatePreview();
+            
+            this.animationFrame = requestAnimationFrame(animate);
+        };
+        animate();
     }
     
     async handleFileSelect(files) {
@@ -338,6 +487,15 @@ class TextBehindImageGenerator {
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'middle';
         
+        // Draw text with audio visualizer effect if audio is playing
+        if (this.isPlaying && this.dataArray) {
+            this.drawVisualizerText(text1, text2, textX, textY, fontSize);
+        } else {
+            this.drawStaticText(text1, text2, textX, textY, fontSize);
+        }
+    }
+    
+    drawStaticText(text1, text2, textX, textY, fontSize) {
         // Draw text with strong outline and shadow for visibility behind person
         this.ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
         this.ctx.shadowBlur = 10;
@@ -365,6 +523,91 @@ class TextBehindImageGenerator {
         this.ctx.shadowBlur = 0;
         this.ctx.shadowOffsetX = 0;
         this.ctx.shadowOffsetY = 0;
+    }
+    
+    drawVisualizerText(text1, text2, textX, textY, fontSize) {
+        const intensity = parseFloat(this.visualizerIntensity.value);
+        
+        // Calculate average frequency for overall intensity
+        let sum = 0;
+        for (let i = 0; i < this.dataArray.length; i++) {
+            sum += this.dataArray[i];
+        }
+        const average = sum / this.dataArray.length;
+        const normalizedIntensity = (average / 255) * intensity;
+        
+        // Create dynamic colors based on audio
+        const hue = (average / 255) * 360;
+        const saturation = 70 + (normalizedIntensity * 30);
+        const lightness = 50 + (normalizedIntensity * 20);
+        
+        // Draw glowing effect around text
+        this.ctx.shadowColor = `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+        this.ctx.shadowBlur = 20 + (normalizedIntensity * 30);
+        this.ctx.shadowOffsetX = 0;
+        this.ctx.shadowOffsetY = 0;
+        
+        // Draw multiple glow layers for stronger effect
+        for (let i = 0; i < 3; i++) {
+            this.ctx.strokeStyle = `hsla(${hue}, ${saturation}%, ${lightness}%, ${0.8 - i * 0.2})`;
+            this.ctx.lineWidth = 8 + (i * 4) + (normalizedIntensity * 5);
+            this.ctx.fillStyle = `hsla(${hue}, ${saturation}%, ${Math.min(90, lightness + 40)}%, 0.9)`;
+            
+            if (text1) {
+                this.ctx.strokeText(text1, textX, textY);
+                this.ctx.fillText(text1, textX, textY);
+            }
+            
+            if (text2) {
+                const line2Y = textY + fontSize + 20;
+                this.ctx.strokeText(text2, textX, line2Y);
+                this.ctx.fillText(text2, textX, line2Y);
+            }
+        }
+        
+        // Draw frequency bars around text
+        this.drawFrequencyBars(textX, textY, fontSize, text1, text2);
+        
+        // Reset effects
+        this.ctx.shadowColor = 'transparent';
+        this.ctx.shadowBlur = 0;
+        this.ctx.shadowOffsetX = 0;
+        this.ctx.shadowOffsetY = 0;
+    }
+    
+    drawFrequencyBars(textX, textY, fontSize, text1, text2) {
+        if (!this.dataArray) return;
+        
+        const intensity = parseFloat(this.visualizerIntensity.value);
+        const barCount = Math.min(32, this.dataArray.length);
+        const radius = fontSize * 1.5;
+        
+        // Calculate text bounds for positioning bars around text
+        const textWidth = Math.max(
+            text1 ? this.ctx.measureText(text1).width : 0,
+            text2 ? this.ctx.measureText(text2).width : 0
+        );
+        
+        for (let i = 0; i < barCount; i++) {
+            const angle = (i / barCount) * Math.PI * 2;
+            const barHeight = (this.dataArray[i] / 255) * radius * intensity * 0.5;
+            
+            const startX = textX + Math.cos(angle) * (textWidth * 0.6);
+            const startY = textY + Math.sin(angle) * (fontSize * 0.8);
+            const endX = startX + Math.cos(angle) * barHeight;
+            const endY = startY + Math.sin(angle) * barHeight;
+            
+            // Color based on frequency
+            const hue = (i / barCount) * 360;
+            const alpha = (this.dataArray[i] / 255) * 0.8;
+            
+            this.ctx.strokeStyle = `hsla(${hue}, 70%, 60%, ${alpha})`;
+            this.ctx.lineWidth = 2;
+            this.ctx.beginPath();
+            this.ctx.moveTo(startX, startY);
+            this.ctx.lineTo(endX, endY);
+            this.ctx.stroke();
+        }
     }
     
     async loadProcessedImage(imageSrc) {
@@ -432,6 +675,21 @@ class TextBehindImageGenerator {
         if (type === 'success' || type === 'info') {
             setTimeout(() => {
                 this.previewInfo.innerHTML = '';
+            }, 5000);
+        }
+    }
+    
+    showAudioStatus(message, type = 'info') {
+        this.audioStatus.innerHTML = `
+            <div class="alert alert-${type} fade-in" role="alert">
+                ${message}
+            </div>
+        `;
+        
+        // Clear after 5 seconds for success/info messages
+        if (type === 'success' || type === 'info') {
+            setTimeout(() => {
+                this.audioStatus.innerHTML = '';
             }, 5000);
         }
     }
