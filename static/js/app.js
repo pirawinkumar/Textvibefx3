@@ -561,41 +561,39 @@ class TextBehindImageGenerator {
     drawVisualizerText(text1, text2, textX, textY, fontSize) {
         const intensity = parseFloat(this.visualizerIntensity.value);
         
-        // Calculate average frequency for overall intensity
+        // Calculate average frequency for overall intensity (with better control)
         let sum = 0;
         for (let i = 0; i < this.dataArray.length; i++) {
             sum += this.dataArray[i];
         }
         const average = sum / this.dataArray.length;
-        const normalizedIntensity = (average / 255) * intensity;
+        const normalizedIntensity = Math.min((average / 255) * intensity * 0.3, 1); // Reduced intensity
         
-        // Create dynamic colors based on audio
+        // Create more subtle dynamic colors
         const hue = (average / 255) * 360;
-        const saturation = 70 + (normalizedIntensity * 30);
-        const lightness = 50 + (normalizedIntensity * 20);
+        const saturation = 50 + (normalizedIntensity * 20); // Reduced saturation
+        const lightness = 40 + (normalizedIntensity * 15); // Reduced lightness
         
-        // Draw glowing effect around text
-        this.ctx.shadowColor = `hsl(${hue}, ${saturation}%, ${lightness}%)`;
-        this.ctx.shadowBlur = 20 + (normalizedIntensity * 30);
+        // Draw subtle glow effect around text
+        this.ctx.shadowColor = `hsla(${hue}, ${saturation}%, ${lightness}%, ${normalizedIntensity * 0.6})`;
+        this.ctx.shadowBlur = 8 + (normalizedIntensity * 12); // Reduced blur
         this.ctx.shadowOffsetX = 0;
         this.ctx.shadowOffsetY = 0;
         
-        // Draw multiple glow layers for stronger effect
-        for (let i = 0; i < 3; i++) {
-            this.ctx.strokeStyle = `hsla(${hue}, ${saturation}%, ${lightness}%, ${0.8 - i * 0.2})`;
-            this.ctx.lineWidth = 8 + (i * 4) + (normalizedIntensity * 5);
-            this.ctx.fillStyle = `hsla(${hue}, ${saturation}%, ${Math.min(90, lightness + 40)}%, 0.9)`;
-            
-            if (text1) {
-                this.ctx.strokeText(text1, textX, textY);
-                this.ctx.fillText(text1, textX, textY);
-            }
-            
-            if (text2) {
-                const line2Y = textY + fontSize + 20;
-                this.ctx.strokeText(text2, textX, line2Y);
-                this.ctx.fillText(text2, textX, line2Y);
-            }
+        // Draw single text layer with better visibility
+        this.ctx.strokeStyle = `hsla(${hue}, ${saturation}%, 20%, 0.8)`; // Dark outline
+        this.ctx.lineWidth = 6 + (normalizedIntensity * 3);
+        this.ctx.fillStyle = `hsla(${hue}, ${saturation}%, 85%, 0.95)`; // Light fill
+        
+        if (text1) {
+            this.ctx.strokeText(text1, textX, textY);
+            this.ctx.fillText(text1, textX, textY);
+        }
+        
+        if (text2) {
+            const line2Y = textY + fontSize + 20;
+            this.ctx.strokeText(text2, textX, line2Y);
+            this.ctx.fillText(text2, textX, line2Y);
         }
         
         // Draw frequency bars around text
@@ -627,49 +625,60 @@ class TextBehindImageGenerator {
     }
     
     drawCircularBars(textX, textY, fontSize, text1, text2) {
-        const intensity = parseFloat(this.visualizerIntensity.value);
-        const barCount = 64; // More bars for smoother circle
+        const intensity = parseFloat(this.visualizerIntensity.value) * 0.4; // Reduced overall intensity
+        const barCount = 48; // Reduced bar count for cleaner look
         
-        // Calculate text bounds
+        // Calculate text bounds more accurately
         const text1Width = text1 ? this.ctx.measureText(text1).width : 0;
         const text2Width = text2 ? this.ctx.measureText(text2).width : 0;
         const maxWidth = Math.max(text1Width, text2Width);
+        const textHeight = fontSize * (text2 ? 2.2 : 1.2); // Account for both lines
         
-        // Create multiple concentric circles
-        const circles = [
-            { radius: (maxWidth * 0.6) + fontSize * 0.3, barLength: 0.8 },
-            { radius: (maxWidth * 0.6) + fontSize * 0.6, barLength: 1.0 },
-            { radius: (maxWidth * 0.6) + fontSize * 0.9, barLength: 0.6 }
-        ];
+        // Create spectrum-based circular visualizer
+        const baseRadius = Math.max(maxWidth * 0.6, fontSize * 0.8);
         
-        circles.forEach((circle, circleIndex) => {
-            for (let i = 0; i < barCount; i++) {
-                const angle = (i / barCount) * Math.PI * 2;
-                const dataIndex = Math.floor((i / barCount) * this.dataArray.length);
-                const barHeight = (this.dataArray[dataIndex] / 255) * fontSize * intensity * circle.barLength;
-                
-                const startX = textX + Math.cos(angle) * circle.radius;
-                const startY = textY + Math.sin(angle) * circle.radius;
-                const endX = startX + Math.cos(angle) * barHeight;
-                const endY = startY + Math.sin(angle) * barHeight;
-                
-                // Color variation across circles and frequency
-                const hue = (i / barCount) * 360 + (circleIndex * 120);
-                const saturation = 70 + (circleIndex * 10);
-                const alpha = (this.dataArray[dataIndex] / 255) * (0.9 - circleIndex * 0.2);
-                
-                this.ctx.strokeStyle = `hsla(${hue % 360}, ${saturation}%, 60%, ${alpha})`;
-                this.ctx.lineWidth = 3 - circleIndex;
-                this.ctx.beginPath();
-                this.ctx.moveTo(startX, startY);
-                this.ctx.lineTo(endX, endY);
-                this.ctx.stroke();
-            }
-        });
+        for (let i = 0; i < barCount; i++) {
+            const angle = (i / barCount) * Math.PI * 2;
+            
+            // Map to frequency spectrum (emphasize mid-range frequencies)
+            const spectrumIndex = Math.floor((i / barCount) * this.dataArray.length * 0.7) + Math.floor(this.dataArray.length * 0.1);
+            const frequencyValue = this.dataArray[Math.min(spectrumIndex, this.dataArray.length - 1)];
+            
+            // Calculate bar properties
+            const normalizedFreq = frequencyValue / 255;
+            const barLength = normalizedFreq * fontSize * intensity * 0.8;
+            
+            // Position bars around text perimeter
+            const startRadius = baseRadius;
+            const startX = textX + Math.cos(angle) * startRadius;
+            const startY = textY + Math.sin(angle) * (startRadius * 0.7); // Slightly elliptical
+            const endX = startX + Math.cos(angle) * barLength;
+            const endY = startY + Math.sin(angle) * barLength;
+            
+            // Improved color mapping based on frequency and position
+            const hue = (i / barCount) * 240 + 180; // Blue to purple spectrum
+            const saturation = 60 + (normalizedFreq * 30);
+            const lightness = 40 + (normalizedFreq * 25);
+            const alpha = normalizedFreq * 0.7 + 0.1; // Minimum visibility
+            
+            // Draw bar with gradient effect
+            const gradient = this.ctx.createLinearGradient(startX, startY, endX, endY);
+            gradient.addColorStop(0, `hsla(${hue}, ${saturation}%, ${lightness}%, ${alpha})`);
+            gradient.addColorStop(1, `hsla(${hue + 30}, ${saturation}%, ${lightness + 20}%, ${alpha * 0.3})`);
+            
+            this.ctx.strokeStyle = gradient;
+            this.ctx.lineWidth = 2 + (normalizedFreq * 2);
+            this.ctx.lineCap = 'round';
+            
+            this.ctx.beginPath();
+            this.ctx.moveTo(startX, startY);
+            this.ctx.lineTo(endX, endY);
+            this.ctx.stroke();
+        }
     }
     
     drawOutlineBars(textX, textY, fontSize, text1, text2) {
-        const intensity = parseFloat(this.visualizerIntensity.value);
+        const intensity = parseFloat(this.visualizerIntensity.value) * 0.3; // Reduced intensity
         
         // Get text paths for outline following
         const texts = [
@@ -679,48 +688,52 @@ class TextBehindImageGenerator {
         
         texts.forEach((textItem, textIndex) => {
             const textWidth = this.ctx.measureText(textItem.text).width;
-            const barCount = Math.min(32, textItem.text.length * 4);
+            const barCount = 24; // Reduced for cleaner look
             
-            // Create bars around text perimeter
-            const perimeter = [
-                // Top edge
-                ...Array.from({length: barCount / 4}, (_, i) => ({
-                    x: textItem.x - textWidth/2 + (i / (barCount/4)) * textWidth,
-                    y: textItem.y - fontSize/2,
-                    angle: -Math.PI/2
-                })),
-                // Right edge
-                ...Array.from({length: barCount / 4}, (_, i) => ({
-                    x: textItem.x + textWidth/2,
-                    y: textItem.y - fontSize/2 + (i / (barCount/4)) * fontSize,
-                    angle: 0
-                })),
-                // Bottom edge
-                ...Array.from({length: barCount / 4}, (_, i) => ({
-                    x: textItem.x + textWidth/2 - (i / (barCount/4)) * textWidth,
-                    y: textItem.y + fontSize/2,
-                    angle: Math.PI/2
-                })),
-                // Left edge
-                ...Array.from({length: barCount / 4}, (_, i) => ({
-                    x: textItem.x - textWidth/2,
-                    y: textItem.y + fontSize/2 - (i / (barCount/4)) * fontSize,
-                    angle: Math.PI
-                }))
-            ];
+            // Create smoother bars around text perimeter
+            const perimeter = [];
+            const steps = barCount;
+            const padding = fontSize * 0.3;
+            
+            // Create smooth outline path
+            for (let i = 0; i < steps; i++) {
+                const progress = i / steps;
+                const angle = progress * Math.PI * 2;
+                
+                // Create elliptical outline around text
+                const radiusX = (textWidth / 2) + padding;
+                const radiusY = (fontSize / 2) + padding;
+                
+                const x = textItem.x + Math.cos(angle) * radiusX;
+                const y = textItem.y + Math.sin(angle) * radiusY;
+                
+                perimeter.push({
+                    x: x,
+                    y: y,
+                    angle: angle + Math.PI/2 // Perpendicular to outline
+                });
+            }
             
             perimeter.forEach((point, i) => {
-                const dataIndex = Math.floor((i / perimeter.length) * this.dataArray.length);
-                const barLength = (this.dataArray[dataIndex] / 255) * fontSize * intensity * 0.5;
+                // Map to frequency spectrum more smoothly
+                const spectrumIndex = Math.floor((i / perimeter.length) * this.dataArray.length);
+                const frequencyValue = this.dataArray[spectrumIndex];
+                const normalizedFreq = frequencyValue / 255;
+                const barLength = normalizedFreq * fontSize * intensity * 0.6;
                 
                 const endX = point.x + Math.cos(point.angle) * barLength;
                 const endY = point.y + Math.sin(point.angle) * barLength;
                 
-                const hue = (i / perimeter.length) * 360 + (textIndex * 180);
-                const alpha = (this.dataArray[dataIndex] / 255) * 0.8;
+                // Improved color scheme
+                const hue = (i / perimeter.length) * 300 + (textIndex * 150) + 120; // Green to blue spectrum
+                const saturation = 50 + (normalizedFreq * 25);
+                const lightness = 45 + (normalizedFreq * 20);
+                const alpha = normalizedFreq * 0.6 + 0.15;
                 
-                this.ctx.strokeStyle = `hsla(${hue % 360}, 70%, 60%, ${alpha})`;
-                this.ctx.lineWidth = 2;
+                this.ctx.strokeStyle = `hsla(${hue % 360}, ${saturation}%, ${lightness}%, ${alpha})`;
+                this.ctx.lineWidth = 1.5 + (normalizedFreq * 1.5);
+                this.ctx.lineCap = 'round';
+                
                 this.ctx.beginPath();
                 this.ctx.moveTo(point.x, point.y);
                 this.ctx.lineTo(endX, endY);
@@ -730,32 +743,45 @@ class TextBehindImageGenerator {
     }
     
     drawRadialBars(textX, textY, fontSize, text1, text2) {
-        const intensity = parseFloat(this.visualizerIntensity.value);
-        const barCount = 48;
+        const intensity = parseFloat(this.visualizerIntensity.value) * 0.4; // Reduced intensity
+        const barCount = 36; // Reduced for cleaner look
         
-        // Create radial burst effect
+        // Calculate text bounds for better positioning
+        const text1Width = text1 ? this.ctx.measureText(text1).width : 0;
+        const text2Width = text2 ? this.ctx.measureText(text2).width : 0;
+        const maxWidth = Math.max(text1Width, text2Width);
+        
+        // Create radial burst effect with better spectrum mapping
         for (let i = 0; i < barCount; i++) {
             const angle = (i / barCount) * Math.PI * 2;
-            const dataIndex = Math.floor((i / barCount) * this.dataArray.length);
-            const barLength = (this.dataArray[dataIndex] / 255) * fontSize * intensity * 2;
             
-            // Start from text center, burst outward
-            const startRadius = fontSize * 0.5;
+            // Better frequency mapping for more responsive visualization
+            const spectrumIndex = Math.floor((i / barCount) * this.dataArray.length * 0.8) + Math.floor(this.dataArray.length * 0.1);
+            const frequencyValue = this.dataArray[Math.min(spectrumIndex, this.dataArray.length - 1)];
+            const normalizedFreq = frequencyValue / 255;
+            const barLength = normalizedFreq * fontSize * intensity * 1.2;
+            
+            // Start from text perimeter, burst outward
+            const startRadius = Math.max(maxWidth * 0.4, fontSize * 0.4);
             const startX = textX + Math.cos(angle) * startRadius;
             const startY = textY + Math.sin(angle) * startRadius;
             const endX = startX + Math.cos(angle) * barLength;
             const endY = startY + Math.sin(angle) * barLength;
             
-            // Create gradient effect
+            // Create subtle gradient effect
             const gradient = this.ctx.createLinearGradient(startX, startY, endX, endY);
-            const hue = (i / barCount) * 360;
-            const alpha = (this.dataArray[dataIndex] / 255);
+            const hue = (i / barCount) * 280 + 60; // Yellow to blue spectrum
+            const saturation = 55 + (normalizedFreq * 25);
+            const lightness = 50 + (normalizedFreq * 20);
+            const alpha = normalizedFreq * 0.7 + 0.1;
             
-            gradient.addColorStop(0, `hsla(${hue}, 70%, 70%, ${alpha})`);
-            gradient.addColorStop(1, `hsla(${(hue + 60) % 360}, 80%, 50%, 0)`);
+            gradient.addColorStop(0, `hsla(${hue}, ${saturation}%, ${lightness}%, ${alpha})`);
+            gradient.addColorStop(1, `hsla(${(hue + 40) % 360}, ${saturation}%, ${lightness + 15}%, ${alpha * 0.2})`);
             
             this.ctx.strokeStyle = gradient;
-            this.ctx.lineWidth = 3;
+            this.ctx.lineWidth = 2 + (normalizedFreq * 2);
+            this.ctx.lineCap = 'round';
+            
             this.ctx.beginPath();
             this.ctx.moveTo(startX, startY);
             this.ctx.lineTo(endX, endY);
@@ -878,7 +904,7 @@ class TextBehindImageGenerator {
             const audioDestination = this.audioContext.createMediaStreamDestination();
             recordingAudioSource.connect(this.analyser);
             this.analyser.connect(audioDestination);
-            this.analyser.connect(this.audioContext.destination); // For monitoring
+            // Don't connect to destination to avoid double audio playback during recording
             
             // Combine video and audio streams
             const combinedStream = new MediaStream([
