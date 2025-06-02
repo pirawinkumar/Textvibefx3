@@ -54,29 +54,31 @@
                         
                         <div class="mb-3">
                             <label for="text-line1" class="form-label">Text Line 1</label>
-                            <input type="text" class="form-control" id="text-line1" placeholder="Enter first line of text">
+                            <input type="text" class="form-control" id="text-line1" placeholder="san" value="san">
                         </div>
                         
                         <div class="mb-3">
                             <label for="text-line2" class="form-label">Text Line 2</label>
-                            <input type="text" class="form-control" id="text-line2" placeholder="Enter second line of text">
+                            <input type="text" class="form-control" id="text-line2" placeholder="francisco" value="francisco">
                         </div>
                         
                         <div class="row mb-3">
                             <div class="col-md-6">
-                                <label for="font-family" class="form-label">Font</label>
+                                <label for="font-family" class="form-label">Font Style</label>
                                 <select class="form-select" id="font-family">
-                                    <option value="Arial">Arial</option>
-                                    <option value="Times">Times</option>
-                                    <option value="Helvetica">Helvetica</option>
-                                    <option value="Georgia">Georgia</option>
-                                    <option value="Verdana">Verdana</option>
+                                    <option value="Arial, sans-serif">Arial</option>
+                                    <option value="Times New Roman, serif">Times</option>
+                                    <option value="Helvetica, sans-serif">Helvetica</option>
+                                    <option value="Georgia, serif">Georgia</option>
+                                    <option value="Verdana, sans-serif">Verdana</option>
+                                    <option value="Impact, sans-serif">Impact</option>
+                                    <option value="Courier New, monospace">Courier</option>
                                 </select>
                             </div>
                             <div class="col-md-6">
-                                <label for="font-size" class="form-label">Size</label>
-                                <input type="range" class="form-range" id="font-size" min="12" max="120" value="48">
-                                <div class="range-value" id="font-size-value">48px</div>
+                                <label for="font-size" class="form-label">Font Size</label>
+                                <input type="range" class="form-range" id="font-size" min="20" max="200" value="80">
+                                <div class="range-value" id="font-size-value">80px</div>
                             </div>
                         </div>
                         
@@ -120,7 +122,7 @@
                                 <div class="spinner-border text-primary" role="status">
                                     <span class="visually-hidden">Processing...</span>
                                 </div>
-                                <p class="mt-2">Processing with AI...</p>
+                                <p class="mt-2">Removing background...</p>
                             </div>
                         </div>
                         
@@ -137,9 +139,9 @@
         </div>
     </div>
 
+    <!-- Background Removal Library -->
+    <script type="module" src="{{ url_for('static', filename='js/app.js') }}"></script>
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <!-- Custom JS -->
-    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>
 </html>

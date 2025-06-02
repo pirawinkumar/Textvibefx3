@@ -1,7 +1,12 @@
+// Import the background removal library
+import { removeBackground } from 'https://cdn.skypack.dev/@imgly/background-removal';
+
 class TextBehindImageGenerator {
     constructor() {
         this.currentImage = null;
-        this.currentImageData = null;
+        this.originalImage = null;
+        this.backgroundImage = null;
+        this.foregroundImage = null;
         this.canvas = document.getElementById('preview-canvas');
         this.ctx = this.canvas.getContext('2d');
         this.isProcessing = false;
@@ -103,31 +108,25 @@ class TextBehindImageGenerator {
             return;
         }
         
-        this.showUploadStatus('Uploading image...', 'warning');
+        this.showUploadStatus('Loading image...', 'warning');
         
         try {
-            const formData = new FormData();
-            formData.append('image', file);
+            // Create image URL from file
+            const imageUrl = URL.createObjectURL(file);
             
-            const response = await fetch('/upload', {
-                method: 'POST',
-                body: formData
-            });
+            // Load the original image
+            await this.loadImage(imageUrl);
             
-            const result = await response.json();
+            this.showUploadStatus(`Image loaded successfully! (${this.originalImage.width}x${this.originalImage.height})`, 'success');
+            this.processBtn.disabled = false;
+            this.updatePreview();
             
-            if (result.success) {
-                this.currentImageData = result.image;
-                await this.loadImage(result.image);
-                this.showUploadStatus(`Image uploaded successfully! (${result.width}x${result.height})`, 'success');
-                this.processBtn.disabled = false;
-                this.updatePreview();
-            } else {
-                this.showUploadStatus(result.error || 'Upload failed', 'danger');
-            }
+            // Clean up the object URL
+            URL.revokeObjectURL(imageUrl);
+            
         } catch (error) {
-            console.error('Upload error:', error);
-            this.showUploadStatus('Upload failed. Please try again.', 'danger');
+            console.error('Image loading error:', error);
+            this.showUploadStatus('Failed to load image. Please try again.', 'danger');
         }
     }
     
@@ -135,6 +134,7 @@ class TextBehindImageGenerator {
         return new Promise((resolve, reject) => {
             const img = new Image();
             img.onload = () => {
+                this.originalImage = img;
                 this.currentImage = img;
                 this.setupCanvas();
                 this.previewPlaceholder.style.display = 'none';
@@ -147,6 +147,16 @@ class TextBehindImageGenerator {
     }
     
     setupCanvas() {
+        if (!this.currentImage) return;
+        
+        this.canvas.width = this.currentImage.width;
+        this.canvas.height = this.currentImage.height;
+        
+        this.setupCanvasDisplay();
+        this.drawCanvas();
+    }
+    
+    setupCanvasDisplay() {
         if (!this.currentImage) return;
         
         const container = this.previewContainer;
@@ -167,12 +177,8 @@ class TextBehindImageGenerator {
             displayWidth = containerHeight * imgAspect;
         }
         
-        this.canvas.width = this.currentImage.width;
-        this.canvas.height = this.currentImage.height;
         this.canvas.style.width = `${displayWidth}px`;
         this.canvas.style.height = `${displayHeight}px`;
-        
-        this.drawCanvas();
     }
     
     drawCanvas() {
@@ -202,10 +208,10 @@ class TextBehindImageGenerator {
         
         // Set font
         this.ctx.font = `${fontSize}px ${fontFamily}`;
-        this.ctx.textAlign = 'left';
-        this.ctx.textBaseline = 'top';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
         
-        // Draw text with outline for visibility
+        // Draw text with outline for visibility (preview mode)
         this.ctx.strokeStyle = 'rgba(0, 0, 0, 0.7)';
         this.ctx.lineWidth = 3;
         this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
@@ -224,53 +230,141 @@ class TextBehindImageGenerator {
     
     updatePreview() {
         if (this.currentImage && !this.isProcessing) {
-            this.drawCanvas();
+            // If we have processed foreground, show composed image, otherwise show preview
+            if (this.foregroundImage) {
+                this.composeImage();
+            } else {
+                this.drawCanvas();
+            }
         }
     }
     
     async processImage() {
-        if (!this.currentImageData || this.isProcessing) return;
+        if (!this.originalImage || this.isProcessing) return;
         
         this.isProcessing = true;
         this.processBtn.disabled = true;
         this.processingOverlay.style.display = 'flex';
         
         try {
-            const requestData = {
-                image: this.currentImageData,
-                textLine1: this.textLine1.value,
-                textLine2: this.textLine2.value,
-                fontFamily: this.fontFamily.value,
-                fontSize: this.fontSize.value,
-                textX: this.textX.value,
-                textY: this.textY.value
-            };
+            // Create a canvas to get image data for background removal
+            const tempCanvas = document.createElement('canvas');
+            const tempCtx = tempCanvas.getContext('2d');
+            tempCanvas.width = this.originalImage.width;
+            tempCanvas.height = this.originalImage.height;
+            tempCtx.drawImage(this.originalImage, 0, 0);
             
-            const response = await fetch('/process', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(requestData)
-            });
+            // Convert to blob for background removal
+            const blob = await new Promise(resolve => tempCanvas.toBlob(resolve));
             
-            const result = await response.json();
+            // Remove background using the library
+            const foregroundBlob = await removeBackground(blob);
             
-            if (result.success) {
-                await this.loadProcessedImage(result.processedImage);
-                this.downloadBtn.disabled = false;
-                this.showPreviewInfo('AI processing complete! Text placed behind person.');
-            } else {
-                this.showPreviewInfo(`Processing failed: ${result.error}`, 'danger');
-            }
+            // Create image from the result
+            const foregroundUrl = URL.createObjectURL(foregroundBlob);
+            await this.loadForegroundImage(foregroundUrl);
+            
+            // Generate the final composed image
+            this.composeImage();
+            
+            this.downloadBtn.disabled = false;
+            this.showPreviewInfo('Background removal complete! Text placed behind person.');
+            
+            // Clean up
+            URL.revokeObjectURL(foregroundUrl);
+            
         } catch (error) {
             console.error('Processing error:', error);
-            this.showPreviewInfo('Processing failed. Please try again.', 'danger');
+            this.showPreviewInfo('Background removal failed. Please try again.', 'danger');
         } finally {
             this.isProcessing = false;
             this.processBtn.disabled = false;
             this.processingOverlay.style.display = 'none';
         }
+    }
+    
+    async loadForegroundImage(imageSrc) {
+        return new Promise((resolve, reject) => {
+            const img = new Image();
+            img.onload = () => {
+                this.foregroundImage = img;
+                resolve();
+            };
+            img.onerror = reject;
+            img.src = imageSrc;
+        });
+    }
+    
+    composeImage() {
+        if (!this.originalImage || !this.foregroundImage) return;
+        
+        // Set canvas size
+        this.canvas.width = this.originalImage.width;
+        this.canvas.height = this.originalImage.height;
+        
+        // Clear canvas
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        
+        // 1. Draw original image as background
+        this.ctx.drawImage(this.originalImage, 0, 0);
+        
+        // 2. Draw text layer
+        this.drawTextLayer();
+        
+        // 3. Draw foreground (person) on top
+        this.ctx.drawImage(this.foregroundImage, 0, 0);
+        
+        // Update display
+        this.setupCanvasDisplay();
+    }
+    
+    drawTextLayer() {
+        const text1 = this.textLine1.value;
+        const text2 = this.textLine2.value;
+        
+        if (!text1 && !text2) return;
+        
+        const fontSize = parseInt(this.fontSize.value);
+        const fontFamily = this.fontFamily.value;
+        const textXPercent = parseInt(this.textX.value);
+        const textYPercent = parseInt(this.textY.value);
+        
+        // Convert percentage to pixel coordinates
+        const textX = (textXPercent / 100) * this.canvas.width;
+        const textY = (textYPercent / 100) * this.canvas.height;
+        
+        // Set font
+        this.ctx.font = `bold ${fontSize}px ${fontFamily}`;
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        
+        // Draw text with strong outline and shadow for visibility behind person
+        this.ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
+        this.ctx.shadowBlur = 10;
+        this.ctx.shadowOffsetX = 4;
+        this.ctx.shadowOffsetY = 4;
+        
+        // Draw thick outline
+        this.ctx.strokeStyle = 'rgba(0, 0, 0, 0.9)';
+        this.ctx.lineWidth = 8;
+        this.ctx.fillStyle = 'white';
+        
+        if (text1) {
+            this.ctx.strokeText(text1, textX, textY);
+            this.ctx.fillText(text1, textX, textY);
+        }
+        
+        if (text2) {
+            const line2Y = textY + fontSize + 20;
+            this.ctx.strokeText(text2, textX, line2Y);
+            this.ctx.fillText(text2, textX, line2Y);
+        }
+        
+        // Reset shadow
+        this.ctx.shadowColor = 'transparent';
+        this.ctx.shadowBlur = 0;
+        this.ctx.shadowOffsetX = 0;
+        this.ctx.shadowOffsetY = 0;
     }
     
     async loadProcessedImage(imageSrc) {
@@ -288,34 +382,25 @@ class TextBehindImageGenerator {
     }
     
     async downloadImage() {
-        if (!this.currentImageData) return;
+        if (!this.canvas) return;
         
         try {
-            const response = await fetch('/download', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    image: this.currentImageData
-                })
+            // Convert canvas to blob
+            const blob = await new Promise(resolve => {
+                this.canvas.toBlob(resolve, 'image/png');
             });
             
-            if (response.ok) {
-                const blob = await response.blob();
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `text_behind_image_${Date.now()}.png`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                window.URL.revokeObjectURL(url);
-                
-                this.showPreviewInfo('Image downloaded successfully!', 'success');
-            } else {
-                this.showPreviewInfo('Download failed. Please try again.', 'danger');
-            }
+            // Create download link
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `text_behind_image_${Date.now()}.png`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+            
+            this.showPreviewInfo('Image downloaded successfully!', 'success');
         } catch (error) {
             console.error('Download error:', error);
             this.showPreviewInfo('Download failed. Please try again.', 'danger');
