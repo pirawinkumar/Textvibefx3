@@ -1,8 +1,9 @@
 {
+  "version": 2,
   "builds": [
-    { "src": "main.py", "use": "@vercel/python" }
+    { "src": "Textvibefx3/main.py", "use": "@vercel/python" }
   ],
   "routes": [
-    { "src": "/api/(.*)", "dest": "main.py" }
+    { "src": "/api/(.*)", "dest": "Textvibefx3/main.py" }
   ]
 }
